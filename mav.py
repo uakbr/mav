@@ -23,13 +23,7 @@ class ModelActivationVisualizer:
     def __init__(self, model_name, max_new_tokens=100, max_bar_length=20):
         """
         Initialize the visualizer with a specified Hugging Face model.
-
-        Args:
-            model_name (str): Name of the Hugging Face model to load
-            max_new_tokens (int): Maximum number of tokens to generate
-            max_bar_length (int): Maximum length of activation bar in visualization
         """
-
         self.console = Console()
 
         try:
@@ -37,7 +31,6 @@ class ModelActivationVisualizer:
                 model_name,
                 return_dict_in_generate=True,
                 output_hidden_states=True,
-                output_attentions=True,
             )
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -53,27 +46,19 @@ class ModelActivationVisualizer:
     def generate_with_visualization(self, prompt):
         """
         Generate text and visualize model activations dynamically.
-
-        Args:
-            prompt (str): Initial text prompt to start generation
         """
-
         inputs = self.tokenizer(prompt, return_tensors="pt")
         generated_ids = inputs["input_ids"].tolist()[0]
 
         for _ in range(self.max_new_tokens):
-
             with torch.no_grad():
                 outputs = self.model(torch.tensor([generated_ids]))
                 logits = outputs.logits
 
                 try:
                     hidden_states = outputs.hidden_states
-                    attentions = outputs.attentions
                 except AttributeError:
-                    print(
-                        "Model does not support hidden state or attention visualization."
-                    )
+                    print("Model does not support hidden state visualization.")
                     break
 
             next_token_probs = torch.softmax(logits[:, -1, :], dim=-1).squeeze()
@@ -83,7 +68,6 @@ class ModelActivationVisualizer:
 
             try:
                 mlp_activations = self._process_mlp_activations(hidden_states)
-                attn_activations = self._process_attention_activations(attentions)
             except Exception as e:
                 print(f"Error processing activations: {e}")
                 break
@@ -92,7 +76,6 @@ class ModelActivationVisualizer:
                 generated_ids,
                 next_token_id,
                 mlp_activations,
-                attn_activations,
                 top_ids,
                 top_probs,
                 logits,
@@ -103,58 +86,23 @@ class ModelActivationVisualizer:
     def _process_mlp_activations(self, hidden_states):
         """
         Process MLP (Feedforward) layer activations.
-
-        Args:
-            hidden_states (tuple): Hidden states from the model
-
-        Returns:
-            numpy.ndarray: Processed MLP activations
         """
         return np.array([layer[:, -1, :].mean().item() for layer in hidden_states])
-
-    def _process_attention_activations(self, attentions):
-        """
-        Process self-attention layer activations.
-        Returns the mean attention per head instead of averaging everything.
-        """
-        return np.array(
-            [
-                attn[:, :, -1, :]
-                .mean(dim=-1)
-                .mean()
-                .item()  # Mean over heads, keep per-layer variation
-                for attn in attentions
-            ]
-        )
 
     def _render_visualization(
         self,
         generated_ids,
         next_token_id,
         mlp_activations,
-        attn_activations,
         top_ids,
         top_probs,
         logits,
     ):
         """
         Render the activation visualization using Rich library.
-
-        Args:
-            generated_ids (list): Generated token IDs
-            next_token_id (int): Next predicted token ID
-            mlp_activations (numpy.ndarray): MLP layer activations
-            attn_activations (numpy.ndarray): Attention layer activations
-            top_ids (torch.Tensor): Top predicted token IDs
-            top_probs (torch.Tensor): Probabilities of top tokens
-            logits (torch.Tensor): Raw logits
         """
-
-        max_abs_act = max(
-            np.max(np.abs(mlp_activations)), np.max(np.abs(attn_activations))
-        )
+        max_abs_act = np.max(np.abs(mlp_activations))
         mlp_normalized = (mlp_activations / max_abs_act) * self.max_bar_length
-        attn_normalized = (attn_activations / max_abs_act) * self.max_bar_length
 
         generated_text = self.tokenizer.decode(
             generated_ids[:-1],
@@ -168,23 +116,17 @@ class ModelActivationVisualizer:
         layout = Layout()
 
         activations_str = "[bold cyan]MAV [/bold cyan]\n\n"
-        for i, (mlp_act, attn_act, raw_mlp, raw_attn) in enumerate(
-            zip(mlp_normalized, attn_normalized, mlp_activations, attn_activations)
-        ):
+        for i, (mlp_act, raw_mlp) in enumerate(zip(mlp_normalized, mlp_activations)):
             mlp_bar = "█" * int(abs(mlp_act))
             mlp_color = "yellow" if raw_mlp >= 0 else "magenta"
 
-            attn_bar = "█" * int(abs(attn_act))
-            attn_color = "yellow" if raw_attn >= 0 else "magenta"
-
             activations_str += (
                 f"[bold white]Layer {i:2d}[/] | "
-                f"[bold yellow]MLP:[/] [{mlp_color}]{mlp_bar.ljust(self.max_bar_length)}[/] [bold yellow]{raw_mlp:+.4f}[/]  "
-                f"[bold blue]ATTN:[/] [{attn_color}]{attn_bar.ljust(self.max_bar_length)}[/] [bold blue]{raw_attn:+.4f}[/]\n"
+                f"[bold yellow]MLP:[/] [{mlp_color}]{mlp_bar.ljust(self.max_bar_length)}[/] [bold yellow]{raw_mlp:+.4f}[/]\n"
             )
 
         left_panel = Panel(
-            activations_str, title="MLP & Attention Activations", border_style="cyan"
+            activations_str, title="MLP Activations", border_style="cyan"
         )
 
         top_preds_str = "    ".join(
@@ -219,7 +161,6 @@ class ModelActivationVisualizer:
 
 
 def main():
-
     parser = argparse.ArgumentParser(description="Model Activation Visualizer")
     parser.add_argument(
         "--model",
