@@ -115,14 +115,17 @@ class ModelActivationVisualizer:
     def _process_attention_activations(self, attentions):
         """
         Process self-attention layer activations.
-
-        Args:
-            attentions (tuple): Attention weights from the model
-
-        Returns:
-            numpy.ndarray: Processed attention activations
+        Returns the mean attention per head instead of averaging everything.
         """
-        return np.array([attn[:, :, -1, :].mean().item() for attn in attentions])
+        return np.array(
+            [
+                attn[:, :, -1, :]
+                .mean(dim=-1)
+                .mean()
+                .item()  # Mean over heads, keep per-layer variation
+                for attn in attentions
+            ]
+        )
 
     def _render_visualization(
         self,
