@@ -184,7 +184,7 @@ class ModelActivationVisualizer:
             border_style="blue",
         )
 
-        highlighted_text = Text(generated_text, style="bold bright_red")
+        highlighted_text = Text(generated_text[-200:], style="bold bright_red")
         highlighted_text.append(predicted_char, style="bold on green")
 
         top_panel = Panel(
