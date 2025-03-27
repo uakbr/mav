@@ -20,11 +20,12 @@ import argparse
 
 
 class ModelActivationVisualizer:
-    def __init__(self, model_name, max_new_tokens=100, max_bar_length=20):
+    def __init__(self, model_name, max_new_tokens=100, max_bar_length=20, aggregation="mean"):
         """
         Initialize the visualizer with a specified Hugging Face model.
         """
         self.console = Console()
+        self.aggregation = aggregation
 
         try:
             self.model = AutoModelForCausalLM.from_pretrained(
@@ -85,9 +86,18 @@ class ModelActivationVisualizer:
 
     def _process_mlp_activations(self, hidden_states):
         """
-        Process MLP (Feedforward) layer activations.
+        Process MLP (Feedforward) layer activations based on the selected aggregation method.
         """
-        return np.array([layer[:, -1, :].mean().item() for layer in hidden_states])
+        activations = torch.stack([layer[:, -1, :] for layer in hidden_states])
+
+        if self.aggregation == "mean":
+            return activations.mean(dim=-1).numpy()
+        elif self.aggregation == "l2":
+            return torch.norm(activations, p=2, dim=-1).numpy()
+        elif self.aggregation == "max_abs":
+            return activations.abs().max(dim=-1).values.numpy()
+        else:
+            raise ValueError("Invalid aggregation method. Choose from: mean, l2, max_abs.")
 
     def _render_visualization(
         self,
@@ -117,12 +127,14 @@ class ModelActivationVisualizer:
 
         activations_str = "[bold cyan]MAV [/bold cyan]\n\n"
         for i, (mlp_act, raw_mlp) in enumerate(zip(mlp_normalized, mlp_activations)):
-            mlp_bar = "█" * int(abs(mlp_act))
-            mlp_color = "yellow" if raw_mlp >= 0 else "magenta"
+            mlp_act_scalar = mlp_act.item() if isinstance(mlp_act, np.ndarray) else mlp_act
+            raw_mlp_scalar = raw_mlp.item() if isinstance(raw_mlp, np.ndarray) else raw_mlp
+            mlp_bar = "█" * int(abs(mlp_act_scalar))
+            mlp_color = "yellow" if raw_mlp_scalar >= 0 else "magenta"
 
             activations_str += (
                 f"[bold white]Layer {i:2d}[/] | "
-                f"[bold yellow]MLP:[/] [{mlp_color}]{mlp_bar.ljust(self.max_bar_length)}[/] [bold yellow]{raw_mlp:+.4f}[/]\n"
+                f"[bold yellow]MLP:[/] [{mlp_color}]{mlp_bar.ljust(self.max_bar_length)}[/] [bold yellow]{raw_mlp_scalar:+.4f}[/]\n"
             )
 
         left_panel = Panel(
@@ -162,26 +174,15 @@ class ModelActivationVisualizer:
 
 def main():
     parser = argparse.ArgumentParser(description="Model Activation Visualizer")
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="gpt2",
-        help="Hugging Face model name (default: gpt2)",
-    )
-    parser.add_argument(
-        "--prompt",
-        type=str,
-        default="Once upon a timeline ",
-        help="Initial prompt for text generation",
-    )
-    parser.add_argument(
-        "--tokens", type=int, default=100, help="Number of tokens to generate"
-    )
+    parser.add_argument("--model", type=str, default="gpt2", help="Hugging Face model name (default: gpt2)")
+    parser.add_argument("--prompt", type=str, default="Once upon a timeline ", help="Initial prompt for text generation")
+    parser.add_argument("--tokens", type=int, default=100, help="Number of tokens to generate")
+    parser.add_argument("--aggregation", type=str, choices=["mean", "l2", "max_abs"], default="mean", help="Aggregation method (mean, l2, max_abs)")
 
     args = parser.parse_args()
 
     visualizer = ModelActivationVisualizer(
-        model_name=args.model, max_new_tokens=args.tokens
+        model_name=args.model, max_new_tokens=args.tokens, aggregation=args.aggregation
     )
     visualizer.generate_with_visualization(args.prompt)
 
