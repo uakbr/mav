@@ -165,7 +165,7 @@ class ModelActivationVisualizer:
             entropy_val = float(entropy_val)
             entropy_norm = int(abs(float(entropy_norm)))
             entropy_bar = "█" * entropy_norm
-            entropy_str += f"[bold white]Layer {i:2d}[/] | [bold yellow]:[/] [{entropy_bar.ljust(self.max_bar_length)}] {entropy_val:.4f}\n"
+            entropy_str += f"[bold white]Layer {i+1:2d}[/] | [bold yellow]:[/] [{entropy_bar.ljust(self.max_bar_length)}] {entropy_val:.4f}\n"
 
         entropy_panel = Panel(
             entropy_str, title="Attention Entropy", border_style="magenta"
@@ -205,8 +205,8 @@ class ModelActivationVisualizer:
             Layout(None, size=1),
             Layout(top_panel, size=8),
             Layout(predictions_panel, size=5),
-            Layout(activations_panel, size=16),
-            Layout(entropy_panel, size=16),
+            Layout(activations_panel, size=20),
+            Layout(entropy_panel, size=20),
         )
 
         self.console.clear()
