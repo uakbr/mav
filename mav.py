@@ -1,13 +1,3 @@
-# /// script
-# dependencies = [
-#   "torch",
-#   "rich",
-#   "torch",
-#   "numpy",
-#   "transformers"
-# ]
-# ///
-
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import numpy as np
@@ -19,10 +9,19 @@ from rich.panel import Panel
 import argparse
 
 
+def compute_entropy(attn_matrix):
+    """Compute entropy of attention distributions per layer."""
+    entropy = -torch.sum(attn_matrix * torch.log(attn_matrix + 1e-9), dim=-1)
+    return entropy.mean(dim=-1).cpu().numpy()  # Aggregate over heads
+
+
 class ModelActivationVisualizer:
-    def __init__(self, model_name, max_new_tokens=100, max_bar_length=20, aggregation="mean"):
+    def __init__(
+        self, model_name, max_new_tokens=100, max_bar_length=20, aggregation="mean"
+    ):
         """
         Initialize the visualizer with a specified Hugging Face model.
+        Model Activation Visualizer (MAV)
         """
         self.console = Console()
         self.aggregation = aggregation
@@ -32,6 +31,7 @@ class ModelActivationVisualizer:
                 model_name,
                 return_dict_in_generate=True,
                 output_hidden_states=True,
+                output_attentions=True,  # Add attention output
             )
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -46,7 +46,7 @@ class ModelActivationVisualizer:
 
     def generate_with_visualization(self, prompt):
         """
-        Generate text and visualize model activations dynamically.
+        Generate text and visualize model activations and attention entropy dynamically.
         """
         inputs = self.tokenizer(prompt, return_tensors="pt")
         generated_ids = inputs["input_ids"].tolist()[0]
@@ -58,8 +58,9 @@ class ModelActivationVisualizer:
 
                 try:
                     hidden_states = outputs.hidden_states
+                    attentions = outputs.attentions
                 except AttributeError:
-                    print("Model does not support hidden state visualization.")
+                    print("Model does not support visualization.")
                     break
 
             next_token_probs = torch.softmax(logits[:, -1, :], dim=-1).squeeze()
@@ -69,6 +70,9 @@ class ModelActivationVisualizer:
 
             try:
                 mlp_activations = self._process_mlp_activations(hidden_states)
+                entropy_values = np.array(
+                    [compute_entropy(attn[:, :, -1, :]) for attn in attentions]
+                )
             except Exception as e:
                 print(f"Error processing activations: {e}")
                 break
@@ -80,6 +84,7 @@ class ModelActivationVisualizer:
                 top_ids,
                 top_probs,
                 logits,
+                entropy_values,
             )
 
             time.sleep(0.4)
@@ -97,7 +102,9 @@ class ModelActivationVisualizer:
         elif self.aggregation == "max_abs":
             return activations.abs().max(dim=-1).values.numpy()
         else:
-            raise ValueError("Invalid aggregation method. Choose from: mean, l2, max_abs.")
+            raise ValueError(
+                "Invalid aggregation method. Choose from: mean, l2, max_abs."
+            )
 
     def _render_visualization(
         self,
@@ -107,12 +114,16 @@ class ModelActivationVisualizer:
         top_ids,
         top_probs,
         logits,
+        entropy_values,
     ):
         """
-        Render the activation visualization using Rich library.
+        Render the activation and entropy visualization using Rich library.
         """
         max_abs_act = np.max(np.abs(mlp_activations))
         mlp_normalized = (mlp_activations / max_abs_act) * self.max_bar_length
+
+        max_entropy = np.max(entropy_values)
+        entropy_normalized = (entropy_values / max_entropy) * self.max_bar_length
 
         generated_text = self.tokenizer.decode(
             generated_ids[:-1],
@@ -125,22 +136,49 @@ class ModelActivationVisualizer:
 
         layout = Layout()
 
-        activations_str = "[bold cyan]MAV [/bold cyan]\n\n"
+        # MAV Header
+        # mav_header = Panel(
+        #     "[bold blue]Model Activation Visualizer (MAV)[/bold blue]",
+        #     style="bold",
+        #     border_style="blue"
+        # )
+
+        # MLP Activations Panel
+        activations_str = "[bold cyan]Layer Activations[/bold cyan]\n\n"
         for i, (mlp_act, raw_mlp) in enumerate(zip(mlp_normalized, mlp_activations)):
-            mlp_act_scalar = mlp_act.item() if isinstance(mlp_act, np.ndarray) else mlp_act
-            raw_mlp_scalar = raw_mlp.item() if isinstance(raw_mlp, np.ndarray) else raw_mlp
+            mlp_act_scalar = (
+                mlp_act.item() if isinstance(mlp_act, np.ndarray) else mlp_act
+            )
+            raw_mlp_scalar = (
+                raw_mlp.item() if isinstance(raw_mlp, np.ndarray) else raw_mlp
+            )
             mlp_bar = "█" * int(abs(mlp_act_scalar))
             mlp_color = "yellow" if raw_mlp_scalar >= 0 else "magenta"
 
             activations_str += (
                 f"[bold white]Layer {i:2d}[/] | "
-                f"[bold yellow]MLP:[/] [{mlp_color}]{mlp_bar.ljust(self.max_bar_length)}[/] [bold yellow]{raw_mlp_scalar:+.4f}[/]\n"
+                f"[bold yellow]:[/] [{mlp_color}]{mlp_bar.ljust(self.max_bar_length)}[/] [bold yellow]{raw_mlp_scalar:+.4f}[/]\n"
             )
 
-        left_panel = Panel(
+        activations_panel = Panel(
             activations_str, title="MLP Activations", border_style="cyan"
         )
 
+        # Entropy Panel
+        entropy_str = "[bold cyan]Attention Entropy[/bold cyan]\n\n"
+        for i, (entropy_val, entropy_norm) in enumerate(
+            zip(entropy_values, entropy_normalized)
+        ):
+            entropy_val = float(entropy_val)
+            entropy_norm = int(abs(float(entropy_norm)))
+            entropy_bar = "█" * entropy_norm
+            entropy_str += f"[bold white]Layer {i:2d}[/] | [bold yellow]:[/] [{entropy_bar.ljust(self.max_bar_length)}] {entropy_val:.4f}\n"
+
+        entropy_panel = Panel(
+            entropy_str, title="Entropy per Layer", border_style="magenta"
+        )
+
+        # Top Predictions Panel
         top_preds_str = "    ".join(
             f"[bold magenta]{self.tokenizer.decode([token_id], clean_up_tokenization_spaces=True)}[/] "
             f"([bold yellow]{prob:.1%}[/bold yellow], [bold cyan]{logit:.2f}[/bold cyan])"
@@ -149,23 +187,27 @@ class ModelActivationVisualizer:
             )
         )
 
-        right_panel = Panel(
+        predictions_panel = Panel(
             f"[bold blue]Top Predictions:[/bold blue]\n\n{top_preds_str}",
             title="Predictions",
             border_style="blue",
         )
 
+        # Generated Text Panel
         highlighted_text = Text(generated_text, style="bold bright_red")
         highlighted_text.append(predicted_char, style="bold on green")
+
+        # Layout Configuration for Vertical Stacking
 
         top_panel = Panel(
             highlighted_text, title="Generated Text", border_style="green"
         )
 
         layout.split_column(
-            Layout(top_panel, size=12),
-            Layout(right_panel, size=8),
-            Layout(left_panel, size=20),
+            Layout(top_panel, size=8),  # Generated text panel
+            Layout(predictions_panel, size=5),  # Top Predictions Panel (now separate)
+            Layout(activations_panel, size=16),  # MLP Activations Panel (separate)
+            Layout(entropy_panel, size=16),  # Entropy Panel (separate)
         )
 
         self.console.clear()
@@ -173,11 +215,31 @@ class ModelActivationVisualizer:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Model Activation Visualizer")
-    parser.add_argument("--model", type=str, default="gpt2", help="Hugging Face model name (default: gpt2)")
-    parser.add_argument("--prompt", type=str, default="Once upon a timeline ", help="Initial prompt for text generation")
-    parser.add_argument("--tokens", type=int, default=100, help="Number of tokens to generate")
-    parser.add_argument("--aggregation", type=str, choices=["mean", "l2", "max_abs"], default="mean", help="Aggregation method (mean, l2, max_abs)")
+    parser = argparse.ArgumentParser(
+        description="Model Activation and Entropy Visualizer"
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="gpt2",
+        help="Hugging Face model name (default: gpt2)",
+    )
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default="Once upon a timeline ",
+        help="Initial prompt for text generation",
+    )
+    parser.add_argument(
+        "--tokens", type=int, default=100, help="Number of tokens to generate"
+    )
+    parser.add_argument(
+        "--aggregation",
+        type=str,
+        choices=["mean", "l2", "max_abs"],
+        default="mean",
+        help="Aggregation method (mean, l2, max_abs)",
+    )
 
     args = parser.parse_args()
 
