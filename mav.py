@@ -12,7 +12,7 @@ import argparse
 def compute_entropy(attn_matrix):
     """Compute entropy of attention distributions per layer."""
     entropy = -torch.sum(attn_matrix * torch.log(attn_matrix + 1e-9), dim=-1)
-    return entropy.mean(dim=-1).cpu().numpy()  # Aggregate over heads
+    return entropy.mean(dim=-1).cpu().numpy()
 
 
 class ModelActivationVisualizer:
@@ -25,13 +25,14 @@ class ModelActivationVisualizer:
         """
         self.console = Console()
         self.aggregation = aggregation
+        self.model_name = model_name
 
         try:
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 return_dict_in_generate=True,
                 output_hidden_states=True,
-                output_attentions=True,  # Add attention output
+                output_attentions=True,
             )
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -136,14 +137,13 @@ class ModelActivationVisualizer:
 
         layout = Layout()
 
-        # MAV Header
-        # mav_header = Panel(
-        #     "[bold blue]Model Activation Visualizer (MAV)[/bold blue]",
-        #     style="bold",
-        #     border_style="blue"
-        # )
+        header = Panel(
+            f"[bold blue]MAV: {self.model_name}[/bold blue]",
+            style="bold",
+            border_style="blue",
+            height=3,
+        )
 
-        # MLP Activations Panel
         activations_str = "[bold cyan]Layer Activations[/bold cyan]\n\n"
         for i, (mlp_act, raw_mlp) in enumerate(zip(mlp_normalized, mlp_activations)):
             mlp_act_scalar = (
@@ -164,7 +164,6 @@ class ModelActivationVisualizer:
             activations_str, title="MLP Activations", border_style="cyan"
         )
 
-        # Entropy Panel
         entropy_str = "[bold cyan]Attention Entropy[/bold cyan]\n\n"
         for i, (entropy_val, entropy_norm) in enumerate(
             zip(entropy_values, entropy_normalized)
@@ -178,7 +177,6 @@ class ModelActivationVisualizer:
             entropy_str, title="Entropy per Layer", border_style="magenta"
         )
 
-        # Top Predictions Panel
         top_preds_str = "    ".join(
             f"[bold magenta]{self.tokenizer.decode([token_id], clean_up_tokenization_spaces=True)}[/] "
             f"([bold yellow]{prob:.1%}[/bold yellow], [bold cyan]{logit:.2f}[/bold cyan])"
@@ -193,21 +191,19 @@ class ModelActivationVisualizer:
             border_style="blue",
         )
 
-        # Generated Text Panel
         highlighted_text = Text(generated_text, style="bold bright_red")
         highlighted_text.append(predicted_char, style="bold on green")
-
-        # Layout Configuration for Vertical Stacking
 
         top_panel = Panel(
             highlighted_text, title="Generated Text", border_style="green"
         )
 
         layout.split_column(
-            Layout(top_panel, size=8),  # Generated text panel
-            Layout(predictions_panel, size=5),  # Top Predictions Panel (now separate)
-            Layout(activations_panel, size=16),  # MLP Activations Panel (separate)
-            Layout(entropy_panel, size=16),  # Entropy Panel (separate)
+            Layout(header, size=3),
+            Layout(top_panel, size=8),
+            Layout(predictions_panel, size=5),
+            Layout(activations_panel, size=16),
+            Layout(entropy_panel, size=16),
         )
 
         self.console.clear()
