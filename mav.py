@@ -226,7 +226,7 @@ def main():
         "--aggregation",
         type=str,
         choices=["mean", "l2", "max_abs"],
-        default="mean",
+        default="l2",
         help="Aggregation method (mean, l2, max_abs)",
     )
 
