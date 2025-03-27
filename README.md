@@ -3,7 +3,7 @@
 ![image](https://github.com/user-attachments/assets/7147a0d7-d8ad-4b40-bb53-270c4b7afceb)
 
 
-model activation visualiser
+model activation visualiser (works with llama family models or similar) 
 
 ### installation
 
