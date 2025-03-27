@@ -137,14 +137,7 @@ class ModelActivationVisualizer:
 
         layout = Layout()
 
-        header = Panel(
-            f"[bold blue]MAV: {self.model_name}[/bold blue]",
-            style="bold",
-            border_style="blue",
-            height=3,
-        )
-
-        activations_str = "[bold cyan]Layer Activations[/bold cyan]\n\n"
+        activations_str = ""
         for i, (mlp_act, raw_mlp) in enumerate(zip(mlp_normalized, mlp_activations)):
             mlp_act_scalar = (
                 mlp_act.item() if isinstance(mlp_act, np.ndarray) else mlp_act
@@ -164,7 +157,7 @@ class ModelActivationVisualizer:
             activations_str, title="MLP Activations", border_style="cyan"
         )
 
-        entropy_str = "[bold cyan]Attention Entropy[/bold cyan]\n\n"
+        entropy_str = ""
         for i, (entropy_val, entropy_norm) in enumerate(
             zip(entropy_values, entropy_normalized)
         ):
@@ -174,7 +167,7 @@ class ModelActivationVisualizer:
             entropy_str += f"[bold white]Layer {i:2d}[/] | [bold yellow]:[/] [{entropy_bar.ljust(self.max_bar_length)}] {entropy_val:.4f}\n"
 
         entropy_panel = Panel(
-            entropy_str, title="Entropy per Layer", border_style="magenta"
+            entropy_str, title="Attention Entropy", border_style="magenta"
         )
 
         top_preds_str = "    ".join(
@@ -186,8 +179,8 @@ class ModelActivationVisualizer:
         )
 
         predictions_panel = Panel(
-            f"[bold blue]Top Predictions:[/bold blue]\n\n{top_preds_str}",
-            title="Predictions",
+            f"{top_preds_str}",
+            title="Top Predictions",
             border_style="blue",
         )
 
@@ -195,11 +188,11 @@ class ModelActivationVisualizer:
         highlighted_text.append(predicted_char, style="bold on green")
 
         top_panel = Panel(
-            highlighted_text, title="Generated Text", border_style="green"
+            highlighted_text, title=f"MAV: {self.model_name}", border_style="green"
         )
 
         layout.split_column(
-            Layout(header, size=3),
+            Layout(None, size=1),
             Layout(top_panel, size=8),
             Layout(predictions_panel, size=5),
             Layout(activations_panel, size=16),
