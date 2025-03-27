@@ -2,8 +2,6 @@
 
 model activation visualiser
 
+`uv run mav.py --model gpt2 --prompt "hello mello"` (can replace with other hf models like `meta-llama/Llama-3.2-1B` or `HuggingFaceTB/SmolLM-135M`)
 
-`uv run mav.py --model gpt2 --prompt "hello mello" --aggregation l2` (can replace with other hf models like `meta-llama/Llama-3.2-1B`)
-
-
-<img width="421" alt="readme" src="https://github.com/user-attachments/assets/b110db29-de4e-40a9-8083-57baed1d3b1f" />
+<img width="565" alt="Screenshot" src="https://github.com/user-attachments/assets/e046e29d-4144-4a13-bb77-16a4f06b5de7" />
