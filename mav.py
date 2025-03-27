@@ -17,7 +17,7 @@ def compute_entropy(attn_matrix):
 
 class ModelActivationVisualizer:
     def __init__(
-        self, model_name, max_new_tokens=100, max_bar_length=20, aggregation="mean"
+        self, model_name, max_new_tokens=100, max_bar_length=20, aggregation="mean", refresh_rate=0.2
     ):
         """
         Initialize the visualizer with a specified Hugging Face model.
@@ -26,6 +26,7 @@ class ModelActivationVisualizer:
         self.console = Console()
         self.aggregation = aggregation
         self.model_name = model_name
+        self.refresh_rate = refresh_rate
 
         try:
             self.model = AutoModelForCausalLM.from_pretrained(
@@ -88,7 +89,7 @@ class ModelActivationVisualizer:
                 entropy_values,
             )
 
-            time.sleep(0.4)
+            time.sleep(self.refresh_rate)
 
     def _process_mlp_activations(self, hidden_states):
         """
@@ -184,7 +185,16 @@ class ModelActivationVisualizer:
             border_style="blue",
         )
 
-        highlighted_text = Text(generated_text[-200:], style="bold bright_red")
+        text_lines = generated_text.split('\n')
+        if len(text_lines) > 5:
+            last_lines = '\n'.join(text_lines[-5:])
+        else:
+            # If no line breaks or less than 5 lines, take last 200 chars and find last 5 "lines"
+            last_portion = generated_text[-500:]
+            last_lines = last_portion
+        
+        generated_text = last_lines
+        highlighted_text = Text(generated_text, style="bold bright_red")
         highlighted_text.append(predicted_char, style="bold on green")
 
         top_panel = Panel(
@@ -229,6 +239,13 @@ def main():
         default="l2",
         help="Aggregation method (mean, l2, max_abs)",
     )
+    parser.add_argument(
+        "--refresh-rate",
+        type=float,
+        default=0.2,
+        help="Refresh rate for visualization",
+    )
+
 
     args = parser.parse_args()
 
