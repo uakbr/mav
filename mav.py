@@ -205,8 +205,12 @@ class ModelActivationVisualizer:
             Layout(None, size=1),
             Layout(top_panel, size=8),
             Layout(predictions_panel, size=5),
-            Layout(activations_panel, size=20),
-            Layout(entropy_panel, size=20),
+            Layout(name="bottom_panel")  # Placeholder for the bottom row
+        )
+
+        layout["bottom_panel"].split_row(
+            Layout(activations_panel, ratio=1),
+            Layout(entropy_panel, ratio=1),
         )
 
         self.console.clear()
@@ -242,7 +246,7 @@ def main():
     parser.add_argument(
         "--refresh-rate",
         type=float,
-        default=0.2,
+        default=0.4,
         help="Refresh rate for visualization",
     )
 
