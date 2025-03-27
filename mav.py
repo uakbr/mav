@@ -185,15 +185,6 @@ class ModelActivationVisualizer:
             border_style="blue",
         )
 
-        text_lines = generated_text.split('\n')
-        if len(text_lines) > 5:
-            last_lines = '\n'.join(text_lines[-5:])
-        else:
-            # If no line breaks or less than 5 lines, take last 200 chars and find last 5 "lines"
-            last_portion = generated_text[-500:]
-            last_lines = last_portion
-        
-        generated_text = last_lines
         highlighted_text = Text(generated_text, style="bold bright_red")
         highlighted_text.append(predicted_char, style="bold on green")
 
@@ -203,14 +194,14 @@ class ModelActivationVisualizer:
 
         layout.split_column(
             Layout(None, size=1),
-            Layout(top_panel, size=8),
             Layout(predictions_panel, size=5),
             Layout(name="bottom_panel")  # Placeholder for the bottom row
         )
 
         layout["bottom_panel"].split_row(
-            Layout(activations_panel, ratio=1),
-            Layout(entropy_panel, ratio=1),
+            Layout(top_panel, ratio=1),
+            Layout(activations_panel, ratio=2),
+            Layout(entropy_panel, ratio=2),
         )
 
         self.console.clear()
