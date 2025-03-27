@@ -1,6 +1,6 @@
 
 
-<img width="565" alt="Screenshot" src="https://github.com/user-attachments/assets/e046e29d-4144-4a13-bb77-16a4f06b5de7" />
+![image](https://github.com/user-attachments/assets/7147a0d7-d8ad-4b40-bb53-270c4b7afceb)
 
 
 model activation visualiser
