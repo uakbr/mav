@@ -206,8 +206,8 @@ class ModelActivationVisualizer:
         )
 
         layout.split_column(
-            Layout(top_panel, size=10),
-            Layout(right_panel, size=10),
+            Layout(top_panel, size=12),
+            Layout(right_panel, size=8),
             Layout(left_panel, size=20),
         )
 
