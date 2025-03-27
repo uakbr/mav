@@ -1,3 +1,12 @@
+# /// script
+# dependencies = [
+#   "requests<3",
+#   "rich",
+#   "torch",
+#   "transformers",
+# ]
+# ///
+
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import numpy as np
@@ -237,7 +246,7 @@ def main():
     parser.add_argument(
         "--refresh-rate",
         type=float,
-        default=0.4,
+        default=0.2,
         help="Refresh rate for visualization",
     )
 
