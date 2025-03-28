@@ -1,6 +1,5 @@
 # /// script
 # dependencies = [
-#   "requests<3",
 #   "rich",
 #   "torch",
 #   "transformers",
