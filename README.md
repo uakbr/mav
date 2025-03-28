@@ -9,12 +9,12 @@ model activation visualiser
 
 if uv is installed:
 
-`uv run --with git+https://github.com/attentionmech/mav mav --model gpt2 --prompt "hello mello"`
+`uv run --with git+https://github.com/attentionmech/mav@pilot mav --model gpt2 --prompt "hello mello"`
 
 without uv:
 
 0. venv setup and activate
-1. `pip install git+https://github.com/attentionmech/mav`
+1. `pip install git+https://github.com/attentionmech/mav@pilot`
 2. `mav --model gpt2 --prompt "hello mello"`
 
 also:
