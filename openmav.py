@@ -21,13 +21,18 @@ from rich.panel import Panel
 from rich.text import Text
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-def compute_entropy(attn_matrix):
-    """Compute entropy of attention distributions per layer."""
-    entropy = -torch.sum(attn_matrix * torch.log(attn_matrix + 1e-9), dim=-1)
-    return entropy.mean(dim=-1).cpu().numpy()
+
+class Utils:
+
+    @staticmethod
+    def compute_entropy(attn_matrix):
+        """Compute entropy of attention distributions per layer."""
+        entropy = -torch.sum(attn_matrix * torch.log(attn_matrix + 1e-9), dim=-1)
+        return entropy.mean(dim=-1).cpu().numpy()
 
 
 class DataConverter:
+
     @staticmethod
     def process_mlp_activations(hidden_states, aggregation="l2"):
         """
@@ -43,11 +48,11 @@ class DataConverter:
         activations = torch.stack([layer[:, -1, :] for layer in hidden_states])
 
         if aggregation == "mean":
-            return activations.mean(dim=-1).numpy()
+            return activations.mean(dim=-1).cpu().numpy()
         elif aggregation == "l2":
-            return torch.norm(activations, p=2, dim=-1).numpy()
+            return torch.norm(activations, p=2, dim=-1).cpu().numpy()
         elif aggregation == "max_abs":
-            return activations.abs().max(dim=-1).values.numpy()
+            return activations.abs().max(dim=-1).values.cpu().numpy()
         else:
             raise ValueError(
                 "Invalid aggregation method. Choose from: mean, l2, max_abs."
@@ -64,10 +69,12 @@ class DataConverter:
         Returns:
             numpy.ndarray: Entropy values for each layer
         """
-        return np.array([compute_entropy(attn[:, :, -1, :]) for attn in attentions])
+        return np.array(
+            [Utils.compute_entropy(attn[:, :, -1, :].cpu()) for attn in attentions]
+        )
 
     @staticmethod
-    def normalize_activations(activations, max_bar_length=20):
+    def normalize_activations(activations, scale_type="linear", max_bar_length=20):
         """
         Normalize activations for visualization.
 
@@ -78,11 +85,10 @@ class DataConverter:
         Returns:
             numpy.ndarray: Normalized activations
         """
-        max_abs_act = np.max(np.abs(activations))
-        return (activations / max_abs_act) * max_bar_length
+        return DataConverter.apply_scaling(activations, scale_type, max_bar_length)
 
     @staticmethod
-    def normalize_entropy(entropy_values, max_bar_length=20):
+    def normalize_entropy(entropy_values, scale_type="linear", max_bar_length=20):
         """
         Normalize entropy values for visualization.
 
@@ -93,9 +99,37 @@ class DataConverter:
         Returns:
             numpy.ndarray: Normalized entropy values
         """
-        max_entropy = np.max(entropy_values)
-        max_entropy = max(max_entropy, 1e-9)
-        return (entropy_values / max_entropy) * max_bar_length
+        return DataConverter.apply_scaling(entropy_values, scale_type, max_bar_length)
+
+    @staticmethod
+    def apply_scaling(values, scale_type="linear", max_bar_length=20):
+        """
+        Apply scaling transformation to values for better visualization.
+
+        Args:
+            values (numpy.ndarray): Input values to be scaled.
+            scale_type (str): Scaling method - 'linear', 'log', or 'minmax'.
+            max_bar_length (int): Maximum length for visualization bars.
+
+        Returns:
+            numpy.ndarray: Scaled values.
+        """
+        values = np.array(values)  # Ensure input is a NumPy array
+
+        if scale_type == "log":
+            values = np.log1p(np.abs(values))  # log(1 + x) to handle zero values safely
+        elif scale_type == "minmax":
+            min_val, max_val = np.min(values), np.max(values)
+            if max_val - min_val > 1e-9:  # Prevent division by zero
+                values = (values - min_val) / (max_val - min_val)
+            else:
+                values = np.zeros_like(
+                    values
+                )  # If all values are the same, return zeros
+
+        if np.max(values) > 0:
+            return (values / np.max(values)) * max_bar_length  # Scale to max_bar_length
+        return values
 
 
 class ModelActivationVisualizer:
@@ -107,6 +141,7 @@ class ModelActivationVisualizer:
         aggregation="l2",
         refresh_rate=0.2,
         interactive=False,
+        scale="linear",
     ):
         self.backend = backend
         self.console = Console()
@@ -116,6 +151,8 @@ class ModelActivationVisualizer:
         self.max_new_tokens = max_new_tokens
         self.max_bar_length = max_bar_length
         self.interactive = interactive
+        self.scale = scale
+
         self.data_converter = DataConverter()
 
     def generate_with_visualization(self, prompt):
@@ -158,7 +195,8 @@ class ModelActivationVisualizer:
                     if user_input.lower() == "q":
                         break
                 else:
-                    time.sleep(self.refresh_rate)
+                    if self.refresh_rate > 0:
+                        time.sleep(self.refresh_rate)
 
         finally:
             self.live.stop()
@@ -174,12 +212,11 @@ class ModelActivationVisualizer:
         logits,
         entropy_values,
     ):
-        # Normalize activations and entropy using DataConverter
         mlp_normalized = self.data_converter.normalize_activations(
-            mlp_activations, self.max_bar_length
+            mlp_activations, scale_type=self.scale, max_bar_length=self.max_bar_length
         )
         entropy_normalized = self.data_converter.normalize_entropy(
-            entropy_values, self.max_bar_length
+            entropy_values, scale_type=self.scale, max_bar_length=self.max_bar_length
         )
 
         generated_text = self.backend.decode(
@@ -298,9 +335,10 @@ class ModelBackend:
         raise NotImplementedError("Subclasses must implement decode()")
 
 
-class TransformersBackend(ModelBackend):
-    def __init__(self, model_name):
-        super().__init__(model_name)
+class TransformersBackend:
+    def __init__(self, model_name, device="cpu"):
+        self.model_name = model_name
+        self.device = device
         self.initialize()
 
     def initialize(self):
@@ -310,7 +348,8 @@ class TransformersBackend(ModelBackend):
                 return_dict_in_generate=True,
                 output_hidden_states=True,
                 output_attentions=True,
-            )
+            ).to(self.device)
+
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
             if self.tokenizer.pad_token is None:
@@ -320,16 +359,18 @@ class TransformersBackend(ModelBackend):
             raise
 
     def generate(self, input_ids):
+        input_tensor = torch.tensor([input_ids]).to(self.device)
         with torch.no_grad():
-            outputs = self.model(torch.tensor([input_ids]))
+            outputs = self.model(input_tensor)
+
         return {
-            "logits": outputs.logits,
+            "logits": outputs.logits.cpu(),
             "hidden_states": outputs.hidden_states,
             "attentions": outputs.attentions,
         }
 
     def tokenize(self, text):
-        return self.tokenizer(text, return_tensors="pt")["input_ids"]
+        return self.tokenizer(text, return_tensors="pt")["input_ids"].to(self.device)
 
     def decode(self, token_ids, **kwargs):
         return self.tokenizer.decode(token_ids, **kwargs)
@@ -375,20 +416,38 @@ def main():
         default=False,
     )
 
+    parser.add_argument(
+        "--device",
+        type=str,
+        choices=["cpu", "cuda", "mps"],
+        default="cpu",
+        help="Device to run the model on (cpu, cuda, mps).",
+    )
+
+    parser.add_argument(
+        "--scale",
+        type=str,
+        choices=["linear", "log", "minmax"],
+        default="linear",
+        help="Scaling method for visualization (linear, log, minmax).",
+    )
+
     args = parser.parse_args()
 
     if args.prompt is None or len(args.prompt) == 0:
         print("Prompt cannot be empty.")
         return
 
-    backend = TransformersBackend(args.model)
+    backend = TransformersBackend(args.model, args.device)
     visualizer = ModelActivationVisualizer(
         backend=backend,
         max_new_tokens=args.tokens,
         aggregation=args.aggregation,
         refresh_rate=args.refresh_rate,
         interactive=args.interactive,
+        scale=args.scale,
     )
+
     visualizer.generate_with_visualization(args.prompt)
 
 
