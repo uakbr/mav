@@ -1,17 +1,17 @@
 from setuptools import setup
 
 setup(
-    name="mav",  
-    version="0.0.1",  
-    py_modules=["mav"],  # This tells setuptools it's a single file module
-    install_requires=[  
+    name="openmav",  # Users install with `pip install openmav`
+    version="0.0.2",
+    py_modules=["openmav"],  # Rename your script to openmav.py
+    install_requires=[
         "rich",
         "torch",
         "transformers"
     ],
-    entry_points={  # This defines a command-line script
+    entry_points={
         "console_scripts": [
-            "mav=mav:main",  # This means `mav` command will call `main()` from `mav.py`
+            "mav=openmav:main",  # CLI command remains `mav`, runs `main()` from `openmav.py`
         ],
     },
     author="attentionmech",
