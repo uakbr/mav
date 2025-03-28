@@ -23,14 +23,7 @@ uv run --with git+https://github.com/attentionmech/mav@pilot mav --model gpt2 --
 3. Run the visualizer:  
    ```sh
    mav --model gpt2 --prompt "hello mello"
-   ```  
-
-#### Alternative Installation:  
-
-The `dev` branch's first tag is mapped to `openmav`, so you can also install it with:  
-```sh
-pip install openmav
-```  
+   ```
 
 You can replace `gpt2` with other Hugging Face models for example:  
 - `meta-llama/Llama-3.2-1B`  
