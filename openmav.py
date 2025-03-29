@@ -21,6 +21,10 @@ from rich.panel import Panel
 from rich.text import Text
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+import warnings
+
+warnings.filterwarnings("ignore")
+
 
 class Utils:
 
@@ -157,7 +161,15 @@ class ModelActivationVisualizer:
 
         self.data_converter = DataConverter()
 
-    def generate_with_visualization(self, prompt):
+    def generate_with_visualization(
+        self,
+        prompt,
+        temperature=1.0,
+        top_k=50,
+        top_p=1.0,
+        min_p=0.0,
+        repetition_penalty=1.0,
+    ):
         inputs = self.backend.tokenize(prompt)
         generated_ids = inputs.tolist()[0]
 
@@ -166,14 +178,23 @@ class ModelActivationVisualizer:
 
         try:
             for _ in range(self.max_new_tokens):
-                outputs = self.backend.generate(generated_ids)
+                outputs = self.backend.generate(
+                    generated_ids,
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                    min_p=min_p,
+                    repetition_penalty=repetition_penalty,
+                )
                 logits = outputs["logits"]
                 hidden_states = outputs["hidden_states"]
                 attentions = outputs["attentions"]
 
                 next_token_probs = torch.softmax(logits[:, -1, :], dim=-1).squeeze()
-                top_probs, top_ids = torch.topk(next_token_probs, 8)
-                next_token_id = top_ids[0].item()
+                top_probs, top_ids = torch.topk(next_token_probs, 20)
+                next_token_id = torch.multinomial(
+                    next_token_probs, num_samples=1
+                ).item()
                 generated_ids.append(next_token_id)
 
                 # Use DataConverter to process data
@@ -190,6 +211,7 @@ class ModelActivationVisualizer:
                     top_probs,
                     logits,
                     entropy_values,
+                    next_token_probs,
                 )
 
                 if self.interactive:
@@ -213,6 +235,7 @@ class ModelActivationVisualizer:
         top_probs,
         logits,
         entropy_values,
+        next_token_probs,
     ):
         mlp_normalized = self.data_converter.normalize_activations(
             mlp_activations, scale_type=self.scale, max_bar_length=self.max_bar_length
@@ -223,7 +246,7 @@ class ModelActivationVisualizer:
 
         generated_text = self.backend.decode(
             generated_ids[:-1],
-            skip_special_tokens=True,
+            skip_special_tokens=True,  # TODO explicity set these kwargs in interface
             clean_up_tokenization_spaces=True,
         )
         predicted_char = self.backend.decode(
@@ -258,7 +281,12 @@ class ModelActivationVisualizer:
             border_style="blue",
         )
 
-        # Render generated text panel
+        prob_bin_panel = Panel(
+            self._create_prob_bin_panel(next_token_probs),
+            title="Output Distribution",
+            border_style="yellow",
+        )
+
         generated_text = generated_text[-self.limit_chars :]
 
         highlighted_text = Text(generated_text, style="bold bright_red")
@@ -276,9 +304,10 @@ class ModelActivationVisualizer:
         )
 
         layout["bottom_panel"].split_row(
-            Layout(top_panel, ratio=1),
-            Layout(activations_panel, ratio=2),
-            Layout(entropy_panel, ratio=2),
+            Layout(top_panel, ratio=2),
+            Layout(activations_panel, ratio=3),
+            Layout(entropy_panel, ratio=3),
+            Layout(prob_bin_panel, ratio=2),
         )
 
         self.live.update(layout, refresh=True)
@@ -297,7 +326,7 @@ class ModelActivationVisualizer:
 
             activations_str += (
                 f"[bold white]Layer {i:2d}[/] | "
-                f"[bold yellow]:[/] [{mlp_color}]{mlp_bar.ljust(self.max_bar_length)}[/] [bold yellow]{raw_mlp_scalar:+.4f}[/]\n"
+                f"[bold yellow]:[/] [{mlp_color}]{mlp_bar.ljust(self.max_bar_length)}[/] [bold yellow]{raw_mlp_scalar:+.1f}[/]\n"
             )
         return activations_str
 
@@ -309,27 +338,79 @@ class ModelActivationVisualizer:
             entropy_val = float(entropy_val)
             entropy_norm = int(abs(float(entropy_norm)))
             entropy_bar = "█" * entropy_norm
-            entropy_str += f"[bold white]Layer {i + 1:2d}[/] | [bold yellow]:[/] [{entropy_bar.ljust(self.max_bar_length)}] {entropy_val:.4f}\n"
+            entropy_str += f"[bold white]Layer {i + 1:2d}[/] | [bold yellow]:[/] [{entropy_bar.ljust(self.max_bar_length)}] {entropy_val:.1f}\n"
         return entropy_str
 
     def _create_top_predictions_panel_content(self, top_ids, top_probs, logits):
-        return "    ".join(
-            f"[bold magenta]{self.backend.decode([token_id], clean_up_tokenization_spaces=True)}[/] "
-            f"([bold yellow]{prob:.1%}[/bold yellow], [bold cyan]{logit:.2f}[/bold cyan])"
+        # Create list of formatted entries
+        entries = [
+            f"[bold magenta]{self.backend.decode([token_id], clean_up_tokenization_spaces=True).strip()[:10] or ' ':<10}[/] "
+            f"([bold yellow]{prob:>5.1%}[/bold yellow], [bold cyan]{logit:>4.1f}[/bold cyan])"
             for token_id, prob, logit in zip(
                 top_ids.tolist(), top_probs.tolist(), logits[0, -1, top_ids].tolist()
             )
+        ]
+
+        # Chunk into groups of 5 and join with newlines
+        chunked = [entries[i : i + 5] for i in range(0, len(entries), 5)]
+        return "\n".join("    ".join(chunk) for chunk in chunked)
+
+    def _create_prob_bin_panel(self, next_token_probs, num_bins=20):
+        """
+        Create a histogram-like panel for token probabilities after sorting.
+
+        Args:
+            next_token_probs (torch.Tensor): Probabilities of the next token.
+            num_bins (int): Number of bins to divide the sorted probabilities.
+
+        Returns:
+            str: Formatted string representing probability bins.
+        """
+        next_token_probs = next_token_probs.cpu().numpy()
+
+        sorted_probs = np.sort(next_token_probs)
+
+        sorted_probs = sorted_probs[
+            -100:
+        ]  # TODO: find better way to organise params for this project
+
+        bin_edges = np.linspace(0, len(sorted_probs), num_bins + 1, dtype=int)
+        bin_sums = [
+            np.sum(sorted_probs[bin_edges[i] : bin_edges[i + 1]])
+            for i in range(num_bins)
+        ]
+
+        max_sum = max(bin_sums) if max(bin_sums) > 0 else 1
+        bar_chars = ["█" * int((s / max_sum) * self.max_bar_length) for s in bin_sums]
+
+        bin_labels = [
+            f"{sorted_probs[bin_edges[i + 1] - 1]:.4f}" for i in range(num_bins)
+        ]
+
+        bin_output = "\n".join(
+            f"[bold yellow]{label}[/]: [bold cyan]{bar}[/]"
+            for label, bar, s in zip(bin_labels, bar_chars, bin_sums)
         )
+
+        return bin_output
 
 
 class ModelBackend:
-    def __init__(self, model_name):
-        self.model_name = model_name
+    def __init__(self, model_name, device="cpu"):
+        pass
 
     def initialize(self):
         raise NotImplementedError("Subclasses must implement initialize()")
 
-    def generate(self, input_ids):
+    def generate(
+        self,
+        input_ids,
+        temperature=1.0,
+        top_k=50,
+        top_p=1.0,
+        min_p=0.0,
+        repetition_penalty=1.0,
+    ):
         raise NotImplementedError("Subclasses must implement generate()")
 
     def tokenize(self, text):
@@ -339,7 +420,7 @@ class ModelBackend:
         raise NotImplementedError("Subclasses must implement decode()")
 
 
-class TransformersBackend:
+class TransformersBackend(ModelBackend):
     def __init__(self, model_name, device="cpu"):
         self.model_name = model_name
         self.device = device
@@ -352,29 +433,60 @@ class TransformersBackend:
                 return_dict_in_generate=True,
                 output_hidden_states=True,
                 output_attentions=True,
+                attn_implementation="eager",
             ).to(self.device)
 
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
             if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
+                self.tokenizer.pad_token = (
+                    self.tokenizer.eos_token or self.tokenizer.unk_token
+                )
+
+            if self.model.config.pad_token_id is None:
+                self.model.config.pad_token_id = self.tokenizer.pad_token_id
+
         except Exception as e:
             print(f"Error loading model: {e}")
             raise
 
-    def generate(self, input_ids):
+    def generate(
+        self,
+        input_ids,
+        temperature=1.0,
+        top_k=50,
+        top_p=1.0,
+        min_p=0.0,
+        repetition_penalty=1.0,
+    ):
+
         input_tensor = torch.tensor([input_ids]).to(self.device)
         with torch.no_grad():
-            outputs = self.model(input_tensor)
+            outputs = self.model.generate(
+                input_tensor,
+                do_sample=temperature > 0,
+                max_new_tokens=1,
+                temperature=temperature,
+                top_k=top_k,
+                top_p=top_p,
+                min_p=min_p,
+                repetition_penalty=repetition_penalty,
+                return_dict_in_generate=True,
+                output_scores=True,
+                output_hidden_states=True,
+                output_attentions=True,
+            )
 
         return {
-            "logits": outputs.logits.cpu(),
-            "hidden_states": outputs.hidden_states,
-            "attentions": outputs.attentions,
+            "logits": outputs.scores[-1].unsqueeze(0).cpu(),  # Last step logits
+            "hidden_states": outputs.hidden_states[-1],  # Last step hidden states
+            "attentions": outputs.attentions[-1],  # Last step attentions
         }
 
     def tokenize(self, text):
-        return self.tokenizer(text, return_tensors="pt")["input_ids"].to(self.device)
+        return self.tokenizer(text, padding=True, truncation=True, return_tensors="pt")[
+            "input_ids"
+        ].to(self.device)
 
     def decode(self, token_ids, **kwargs):
         return self.tokenizer.decode(token_ids, **kwargs)
@@ -397,7 +509,7 @@ def main():
         help="Initial prompt for text generation",
     )
     parser.add_argument(
-        "--tokens", type=int, default=200, help="Number of tokens to generate"
+        "--max-new-tokens", type=int, default=200, help="Number of tokens to generate"
     )
     parser.add_argument(
         "--aggregation",
@@ -439,9 +551,63 @@ def main():
     parser.add_argument(
         "--limit-chars",
         type=int,
-        default=500,
+        default=250,
         help="Limit the number of tokens for visualization.",
     )
+
+    parser.add_argument(
+        "--temp",
+        type=float,
+        default=0.0,
+        help="Sampling temperature (higher values = more randomness, default: 0.0)",
+    )
+
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=50,
+        help="top-k sampling (set to 0 to disable, default: 50)",
+    )
+
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=1.0,
+        help="top-p (nucleus) filtering (set to 1.0 to disable, default: 1.0)",
+    )
+
+    parser.add_argument(
+        "--min-p",
+        type=float,
+        default=0.0,
+        help="min_p sampling (default: 0.0)",
+    )
+
+    parser.add_argument(
+        "--repetition-penalty",
+        type=float,
+        default=1.0,
+        help="Penalty for repeated words (default: 1.0, higher values discourage repetition)",
+    )
+
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="transformers",
+        choices=["transformers"],
+        help="Backend to use for model provider (currently on transformers)",
+    )
+
+    # random seed
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+
+    torch.manual_seed(parser.parse_args().seed)
+    np.random.seed(parser.parse_args().seed)
 
     args = parser.parse_args()
 
@@ -449,10 +615,16 @@ def main():
         print("Prompt cannot be empty.")
         return
 
-    backend = TransformersBackend(args.model, args.device)
+    backend = None
+
+    if args.backend == "transformers":
+        backend = TransformersBackend(args.model, args.device)
+    else:
+        raise ValueError(f"Unsupported backend: {args.backend}")
+
     visualizer = ModelActivationVisualizer(
         backend=backend,
-        max_new_tokens=args.tokens,
+        max_new_tokens=args.max_new_tokens,
         aggregation=args.aggregation,
         refresh_rate=args.refresh_rate,
         interactive=args.interactive,
@@ -460,7 +632,14 @@ def main():
         limit_chars=args.limit_chars,
     )
 
-    visualizer.generate_with_visualization(args.prompt)
+    visualizer.generate_with_visualization(
+        args.prompt,
+        temperature=args.temp,
+        top_k=args.top_k,
+        top_p=args.top_p,
+        min_p=args.min_p,
+        repetition_penalty=args.repetition_penalty,
+    )
 
 
 if __name__ == "__main__":
