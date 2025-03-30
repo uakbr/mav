@@ -3,9 +3,13 @@
 #   "datasets",
 #   "torch",
 #   "transformers[torch]",
-#   "openmav@git+https://github.com/attentionmech/mav@train_test",
+#   "openmav@git+https://github.com/attentionmech/mav@main",
 # ]
 # ///
+
+
+# run this using: uv run examples/vis_train_loop.py
+
 import os
 import torch
 from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer, Trainer, TrainingArguments, DataCollatorForLanguageModeling, TrainerCallback
