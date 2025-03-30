@@ -1,4 +1,5 @@
 import torch
+
 from openmav.converters.data_converter import DataConverter
 
 
@@ -43,6 +44,16 @@ class MAVDataProcessor:
             [next_token_id], clean_up_tokenization_spaces=True
         )
 
+        decoded_tokens = [
+            (
+                self.backend.decode(
+                    [token_id], clean_up_tokenization_spaces=True
+                ).strip()[:10]
+                or " "
+            )
+            for token_id in top_ids.tolist()
+        ]
+
         return {
             "mlp_activations": mlp_activations,
             "mlp_normalized": mlp_normalized,
@@ -54,6 +65,7 @@ class MAVDataProcessor:
             "top_ids": top_ids,
             "top_probs": top_probs,
             "logits": logits,
+            "decoded_tokens": decoded_tokens,
         }
 
 
