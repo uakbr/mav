@@ -3,7 +3,7 @@
 #   "datasets",
 #   "torch",
 #   "transformers[torch]",
-#   "openmav@git+https://github.com/attentionmech/mav@main",
+#   "openmav@git+https://github.com/attentionmech/mav",
 # ]
 # ///
 
@@ -14,7 +14,7 @@ import os
 import torch
 from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer, Trainer, TrainingArguments, DataCollatorForLanguageModeling, TrainerCallback
 from datasets import load_dataset
-from openmav import MAV
+from openmav.mav import MAV
 
 DEVICE="mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
 
