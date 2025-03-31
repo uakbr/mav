@@ -151,7 +151,7 @@ def main():
     parser.add_argument(
         "--limit-chars",
         type=int,
-        default=250,
+        default=400,
         help="Limit the number of tokens for visualization.",
     )
 
@@ -209,7 +209,7 @@ def main():
     parser.add_argument(
         "--max-bar-length",
         type=int,
-        default=50,
+        default=35,
         help="UI bar max length counted in square characters",
     )
 
@@ -238,7 +238,7 @@ def main():
 
     args = parser.parse_args()
 
-    version = "0.0.8"
+    version = "0.0.9"
 
     if args.version:
         print(version)
