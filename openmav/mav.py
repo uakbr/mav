@@ -10,7 +10,7 @@ from openmav.view.main_loop_manager import MainLoopManager
 warnings.filterwarnings("ignore")
 
 # app version
-APP_VERSION = "0.0.10"
+APP_VERSION = "0.0.11"
 
 
 def MAV(
@@ -228,7 +228,7 @@ def main():
             "mlp_activations",
             "attention_entropy",
         ],
-        help="List of selected panels. Default: top_predictions, output_distribution, "
+        help="List of selected panels. Default: top_predictions, "
         "generated_text, mlp_activations, attention_entropy.",
     )
 
