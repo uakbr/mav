@@ -1,6 +1,7 @@
 import time
 
 import numpy as np
+from rich.align import Align
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
@@ -10,14 +11,14 @@ from rich.text import Text
 from openmav.view.panels.panel_creator import PanelCreator
 
 
-class ConsoleMAV:
+class MainLoopManager:
     """
     Handles UI loop
     """
 
     def __init__(
         self,
-        data_provider,
+        state_provider,
         model_name,
         refresh_rate=0.2,
         interactive=False,
@@ -34,9 +35,10 @@ class ConsoleMAV:
         num_grid_rows=1,
         selected_panels=None,
         version=None,
+        external_panels=None,
     ):
         self.console = Console()
-        self.data_provider = data_provider
+        self.state_provider = state_provider
         self.live = Live(auto_refresh=False)
         self.refresh_rate = refresh_rate
         self.interactive = interactive
@@ -55,10 +57,13 @@ class ConsoleMAV:
         self.version = version
         self.model_name = model_name
         self.panel_creator = PanelCreator(
-            max_bar_length=max_bar_length, limit_chars=limit_chars
+            max_bar_length=max_bar_length,
+            limit_chars=limit_chars,
+            selected_panels=selected_panels,
+            external_panels=external_panels,
         )
 
-    def ui_loop(self, prompt):
+    def state_loop(self, prompt):
         """
         Runs the UI loop, updating the display with new data from MAVGenerator.
         """
@@ -66,7 +71,7 @@ class ConsoleMAV:
         self.live.start()
 
         try:
-            for data in self.data_provider.generate_tokens(
+            for data in self.state_provider.fetch_next(
                 prompt,
                 temperature=self.temperature,
                 top_k=self.top_k,
@@ -94,22 +99,7 @@ class ConsoleMAV:
         """
         layout = Layout()
 
-        selected_panels = self.selected_panels
-
-        panel_definitions = self.panel_creator.get_panels(data)
-
-        if selected_panels is None:
-            selected_panels = list(panel_definitions.keys())
-
-        panels = [
-            panel_definitions[key]
-            for key in selected_panels
-            if key in panel_definitions
-        ]
-
-        if not panels:
-            # print exception that no valid panels are provided
-            raise ValueError("No valid panels provided")
+        panels = self.panel_creator.get_panels(data)
 
         num_rows = max(1, self.num_grid_rows)
         num_columns = (
@@ -118,7 +108,8 @@ class ConsoleMAV:
 
         title_bar = Layout(
             Panel(
-                f"| OpenMAV v{self.version} | {self.model_name}", border_style="white"
+                Align.center(f"| OpenMAV v{self.version} | model: {self.model_name}"),
+                border_style="white",
             ),
             size=3,
         )
