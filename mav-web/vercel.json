@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "vercel_python_api/**.py": {
+      "runtime": "python3.10",
+      "maxDuration": 60
+    }
+  },
+  "routes": [
+    { "src": "/api/run", "dest": "/vercel_python_api/run.py" }
+  ]
+} 
